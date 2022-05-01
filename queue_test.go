@@ -40,6 +40,9 @@ func TestReceiveNoErrorFlag(t *testing.T) {
 	msgType := testMsgType
 	require.NoError(t, snd.MsgSnd(msgType, []byte("aaaaaaaaaaaaaaa")))
 
+	_, _, err = rcv.MsgRcv(testMsgType)
+	require.Error(t, err)
+
 	gotType, msg, err := rcv.MsgRcv(testMsgType, MsgNoErrorFlag)
 	require.NoError(t, err)
 	assert.Equal(t, gotType, msgType)
