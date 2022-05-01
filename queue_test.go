@@ -109,7 +109,7 @@ func TestSendReceiveMany(t *testing.T) {
 	wg.Wait()
 }
 
-func newTestQueue(t *testing.T) QueueId {
+func newTestQueue(t *testing.T) QueueID {
 	t.Helper()
 	file, err := os.CreateTemp("", "ipc")
 	require.NoError(t, err)

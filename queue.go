@@ -32,7 +32,7 @@ var (
 )
 
 type key = int
-type QueueId C.int
+type QueueID C.int
 type MessageType int64
 
 type SendFlag int
@@ -77,8 +77,8 @@ Reference:
    https://man7.org/linux/man-pages/man3/ftok.3.html
    https://man7.org/linux/man-pages/man2/msgget.2.html
 */
-func NewQueue(path string, projectId int, msgFlag os.FileMode) (QueueId, error) {
-	key, err := ftok(path, projectId)
+func NewQueue(path string, projectID int, msgFlag os.FileMode) (QueueID, error) {
+	key, err := ftok(path, projectID)
 	if err != nil {
 		return 0, err
 	}
@@ -95,7 +95,7 @@ Delete this queue using msgctl(queueId, IPC_RMID, NULL).
 Reference:
     https://man7.org/linux/man-pages/man2/msgctl.2.html
 */
-func (q QueueId) Remove() error {
+func (q QueueID) Remove() error {
 	res, err := C.msgctl(C.int(q), C.IPC_RMID, (*C.struct_msqid_ds)(C.NULL))
 	if res == errNum {
 		return err
@@ -111,21 +111,21 @@ func ftok(path string, id int) (key, error) {
 	return key(res), nil
 }
 
-func msgget(key key, msgFlag os.FileMode) (QueueId, error) {
+func msgget(key key, msgFlag os.FileMode) (QueueID, error) {
 	res, err := C.msgget(C.int(key), C.int(msgFlag))
 	if res == errNum {
 		return 0, fmt.Errorf("msgget: %w", err)
 	}
-	return QueueId(res), nil
+	return QueueID(res), nil
 }
 
 /*NewBuffer
 Initialize a new buffer ready to send and receive messages
-from the queue with the given QueueId.
+from the queue with the given QueueID.
 A single buffer with the given size will be allocated and used during
 msgsnd and msgrcv operations.
 */
-func (q QueueId) NewBuffer(size uint64) (*MsgBuffer, error) {
+func (q QueueID) NewBuffer(size uint64) (*MsgBuffer, error) {
 	buffer := unsafe.Pointer(C.malloc(C.ulong(longSize + size + 1)))
 	if buffer == C.NULL {
 		return nil, fmt.Errorf("malloc failed")
@@ -146,7 +146,7 @@ but note that only one operation will be performed at a time.
 For this reason, it is recommended to use separate buffers for sending and receiving.
 */
 type MsgBuffer struct {
-	queueId QueueId
+	queueId QueueID
 	size    uint64
 	buffer  unsafe.Pointer
 
@@ -186,7 +186,7 @@ func (b *MsgBuffer) MsgSnd(msgType MessageType, msg []byte, flags ...SendFlag) e
 	if len(msg) > 0 {
 		C.strcpy((*C.char)(unsafe.Add(b.buffer, longSize)), (*C.char)(unsafe.Pointer(&msg[0])))
 	}
-	*(*C.char)(unsafe.Add(b.buffer, int(end))) = 0
+	*(*C.char)(unsafe.Add(b.buffer, int(end))) = 0 // append null byte
 
 	for {
 		ret, err := C.msgsnd(C.int(b.queueId), b.buffer, C.ulong(b.size), flag)

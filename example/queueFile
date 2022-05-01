@@ -1,0 +1,2 @@
+This file is used by ftok to generate a unique identifier for a queue.
+In practice this file can be empty.
