@@ -7,7 +7,7 @@ import (
 
 func main() {
 	queueID := NewExampleQueue()
-	buf, err := queueID.NewBuffer(1024)
+	buf, err := sysv.NewMsgBuffer(queueID, 1024)
 	Must(err)
 	defer buf.Close()
 

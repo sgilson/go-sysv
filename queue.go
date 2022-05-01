@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"syscall"
 	"unsafe"
 )
 
@@ -90,7 +91,7 @@ func NewQueue(path string, projectID int, msgFlag os.FileMode) (QueueID, error) 
 }
 
 /*Remove
-Delete this queue using msgctl(queueId, IPC_RMID, NULL).
+Delete this queue using msgctl(queueID, IPC_RMID, NULL).
 
 Reference:
     https://man7.org/linux/man-pages/man2/msgctl.2.html
@@ -119,26 +120,6 @@ func msgget(key key, msgFlag os.FileMode) (QueueID, error) {
 	return QueueID(res), nil
 }
 
-/*NewBuffer
-Initialize a new buffer ready to send and receive messages
-from the queue with the given QueueID.
-A single buffer with the given size will be allocated and used during
-msgsnd and msgrcv operations.
-*/
-func (q QueueID) NewBuffer(size uint64) (*MsgBuffer, error) {
-	buffer := unsafe.Pointer(C.malloc(C.ulong(longSize + size + 1)))
-	if buffer == C.NULL {
-		return nil, fmt.Errorf("malloc failed")
-	}
-
-	return &MsgBuffer{
-		queueId: q,
-		size:    size,
-		buffer:  buffer,
-		lock:    new(sync.Mutex),
-	}, nil
-}
-
 /*MsgBuffer
 Manage a buffer used for either sending or receiving from a queue.
 MsgSnd and MsgRcv can safely be invoked concurrently,
@@ -146,13 +127,42 @@ but note that only one operation will be performed at a time.
 For this reason, it is recommended to use separate buffers for sending and receiving.
 */
 type MsgBuffer struct {
-	queueId QueueID
+	queueID QueueID
 	size    uint64
 	buffer  unsafe.Pointer
 
 	lock   *sync.Mutex
 	closed bool
 }
+
+/*NewMsgBuffer
+Initialize a new buffer ready to send and receive messages
+from the queue with the given QueueID.
+A single buffer with the given size will be allocated and used during
+msgsnd and msgrcv operations.
+*/
+func NewMsgBuffer(queueID QueueID, size uint64, opts ...MsgBufferOpt) (*MsgBuffer, error) {
+	buffer := unsafe.Pointer(C.malloc(C.ulong(longSize + size + 1)))
+	if buffer == C.NULL {
+		return nil, fmt.Errorf("malloc failed")
+	}
+
+	msgBuf := &MsgBuffer{
+		queueID: queueID,
+		size:    size,
+		buffer:  buffer,
+		lock:    new(sync.Mutex),
+	}
+	for _, opt := range opts {
+		opt(msgBuf)
+	}
+	return msgBuf, nil
+}
+
+/*MsgBufferOpt
+Additional options that can be applied to a message buffer.
+*/
+type MsgBufferOpt func(buffer *MsgBuffer)
 
 /*MsgSnd
 Send a message with the given type.
@@ -189,10 +199,9 @@ func (b *MsgBuffer) MsgSnd(msgType MessageType, msg []byte, flags ...SendFlag) e
 	*(*C.char)(unsafe.Add(b.buffer, int(end))) = 0 // append null byte
 
 	for {
-		ret, err := C.msgsnd(C.int(b.queueId), b.buffer, C.ulong(b.size), flag)
+		ret, err := C.msgsnd(C.int(b.queueID), b.buffer, C.ulong(b.size), flag)
 		if ret == errNum {
-			if err.Error() == "interrupted system call" {
-				// retry
+			if errors.Is(err, syscall.EINTR) {
 				continue
 			}
 			return err
@@ -225,7 +234,7 @@ func (b *MsgBuffer) MsgRcv(msgType MessageType, flags ...ReceiveFlag) (MessageTy
 		return 0, nil, UseAfterFreeError
 	}
 
-	ret, err := C.msgrcv(C.int(b.queueId), b.buffer, C.ulong(b.size), C.long(msgType), mergeFlags(flags...))
+	ret, err := C.msgrcv(C.int(b.queueID), b.buffer, C.ulong(b.size), C.long(msgType), mergeFlags(flags...))
 	if ret == errNum {
 		return 0, nil, err
 	}

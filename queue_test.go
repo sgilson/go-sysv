@@ -14,8 +14,7 @@ import (
 const testMsgType = MessageType(1)
 
 func TestReceiveAny(t *testing.T) {
-	q := newTestQueue(t)
-	buf, err := q.NewBuffer(100)
+	buf, err := NewMsgBuffer(newTestQueue(t), 100)
 	require.NoError(t, err)
 	defer buf.Close()
 
@@ -30,11 +29,11 @@ func TestReceiveAny(t *testing.T) {
 }
 
 func TestReceiveNoErrorFlag(t *testing.T) {
-	q := newTestQueue(t)
+	queueID := newTestQueue(t)
 
-	snd, err := q.NewBuffer(15)
+	snd, err := NewMsgBuffer(queueID, 15)
 	require.NoError(t, err)
-	rcv, err := q.NewBuffer(10)
+	rcv, err := NewMsgBuffer(queueID, 10)
 	require.NoError(t, err)
 
 	msgType := testMsgType
@@ -50,7 +49,7 @@ func TestReceiveNoErrorFlag(t *testing.T) {
 }
 
 func TestUseAfterFree(t *testing.T) {
-	buf, err := newTestQueue(t).NewBuffer(0)
+	buf, err := NewMsgBuffer(newTestQueue(t), 0)
 	require.NoError(t, err)
 
 	require.NoError(t, buf.Close())
@@ -66,7 +65,7 @@ func TestUseAfterFree(t *testing.T) {
 }
 
 func TestSendReceiveMany(t *testing.T) {
-	q := newTestQueue(t)
+	queueID := newTestQueue(t)
 	msgType := MessageType(rand.Int())
 	maxSize := uint64(100)
 	iter := 10_000
@@ -75,7 +74,7 @@ func TestSendReceiveMany(t *testing.T) {
 	wg.Add(2)
 
 	go func() {
-		rcv, err := q.NewBuffer(maxSize)
+		rcv, err := NewMsgBuffer(queueID, maxSize)
 		require.NoError(t, err)
 		defer rcv.Close()
 
@@ -94,7 +93,7 @@ func TestSendReceiveMany(t *testing.T) {
 	}()
 
 	go func() {
-		snd, err := q.NewBuffer(maxSize)
+		snd, err := NewMsgBuffer(queueID, maxSize)
 		require.NoError(t, err)
 		defer snd.Close()
 
