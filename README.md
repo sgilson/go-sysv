@@ -24,13 +24,12 @@ Implemented facilities:
 The example files can be run using the following commands:
 
 ```shell
-cd example
-go run sender.go    # Create queue and send message
-go run receiver.go  # Receive one message
-go run cleanup.go   # Delete queue from system
+go run example/sender/main.go    # Create queue and send message
+go run example/receiver/main.go  # Receive one message
+go run example/cleanup/main.go   # Delete queue from system
 ```
 
-Send and receive can be run in any order, though note that receiver.go
+Send and receive can be run in any order, though note the receiver
 will block until a message or interrupt arrives.
 
 If you experience trouble on your system and need to delete queues without
