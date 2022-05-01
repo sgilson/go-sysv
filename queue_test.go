@@ -8,7 +8,9 @@ import (
 	"os"
 	"strconv"
 	"sync"
+	"syscall"
 	"testing"
+	"time"
 )
 
 const testMsgType = MessageType(1)
@@ -46,6 +48,34 @@ func TestReceiveNoErrorFlag(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, gotType, msgType)
 	assert.Equal(t, []byte("aaaaaaaaaa"), msg)
+}
+
+func TestResumeOnInterrupt(t *testing.T) {
+	queueID := newTestQueue(t)
+	rcvResume, err := NewMsgBuffer(queueID, 0, ResumeOnInterrupt)
+	require.NoError(t, err)
+	rcvFail, err := NewMsgBuffer(queueID, 0, NoResumeOnInterrupt)
+	require.NoError(t, err)
+	snd, err := NewMsgBuffer(queueID, 0)
+	require.NoError(t, err)
+
+	go func() {
+		_, _, err := rcvResume.MsgRcv(testMsgType)
+		require.NoError(t, err, "interrupt error was ignored")
+	}()
+
+	awaitMsgBufLocked(rcvResume)
+	require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
+	require.NoError(t, snd.MsgSnd(testMsgType, []byte{}, SNoWaitFlag))
+	require.GreaterOrEqual(t, rcvResume.safeNumInterruptsIgnored(), 1)
+
+	go func() {
+		_, _, err := rcvFail.MsgRcv(testMsgType)
+		require.ErrorIs(t, err, syscall.EINTR)
+	}()
+	awaitMsgBufLocked(rcvFail)
+	require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
+	require.Equal(t, rcvFail.safeNumInterruptsIgnored(), 0)
 }
 
 func TestUseAfterFree(t *testing.T) {
@@ -123,4 +153,22 @@ func newTestQueue(t *testing.T) QueueID {
 		require.NoError(t, q.Remove())
 	})
 	return q
+}
+
+func awaitMsgBufLocked(b *MsgBuffer) {
+	// Want to wait for the another goroutine to actually
+	// be in the blocking system call.
+	// This isn't perfect, but we can at least wait for another goroutine to
+	// have acquired the lock on the queue before proceeding
+	for {
+		time.Sleep(10 * time.Millisecond)
+		if b.lock.TryLock() {
+			b.lock.Unlock()
+		} else {
+			break
+		}
+	}
+	// Additional time to allow other goroutine to start
+	// system call such as msgsnd or msgrcv
+	time.Sleep(10 * time.Millisecond)
 }

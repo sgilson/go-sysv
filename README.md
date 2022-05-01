@@ -30,7 +30,7 @@ go run example/cleanup/main.go   # Delete queue from system
 ```
 
 Send and receive can be run in any order, though note the receiver
-will block until a message or interrupt arrives.
+will block until a message arrives.
 
 If you experience trouble on your system and need to delete queues without
 using this package, use `ipcs` and `ipcrm`.

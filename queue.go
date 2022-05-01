@@ -133,6 +133,9 @@ type MsgBuffer struct {
 
 	lock   *sync.Mutex
 	closed bool
+
+	resumeOnInterrupt    bool
+	numInterruptsIgnored int
 }
 
 /*NewMsgBuffer
@@ -163,6 +166,15 @@ func NewMsgBuffer(queueID QueueID, size uint64, opts ...MsgBufferOpt) (*MsgBuffe
 Additional options that can be applied to a message buffer.
 */
 type MsgBufferOpt func(buffer *MsgBuffer)
+
+var (
+	ResumeOnInterrupt MsgBufferOpt = func(b *MsgBuffer) {
+		b.resumeOnInterrupt = true
+	}
+	NoResumeOnInterrupt MsgBufferOpt = func(b *MsgBuffer) {
+		b.resumeOnInterrupt = false
+	}
+)
 
 /*MsgSnd
 Send a message with the given type.
@@ -201,7 +213,8 @@ func (b *MsgBuffer) MsgSnd(msgType MessageType, msg []byte, flags ...SendFlag) e
 	for {
 		ret, err := C.msgsnd(C.int(b.queueID), b.buffer, C.ulong(b.size), flag)
 		if ret == errNum {
-			if errors.Is(err, syscall.EINTR) {
+			if errors.Is(err, syscall.EINTR) && b.resumeOnInterrupt {
+				b.numInterruptsIgnored++
 				continue
 			}
 			return err
@@ -234,10 +247,18 @@ func (b *MsgBuffer) MsgRcv(msgType MessageType, flags ...ReceiveFlag) (MessageTy
 		return 0, nil, UseAfterFreeError
 	}
 
-	ret, err := C.msgrcv(C.int(b.queueID), b.buffer, C.ulong(b.size), C.long(msgType), mergeFlags(flags...))
-	if ret == errNum {
-		return 0, nil, err
+	for {
+		ret, err := C.msgrcv(C.int(b.queueID), b.buffer, C.ulong(b.size), C.long(msgType), mergeFlags(flags...))
+		if ret == errNum {
+			if errors.Is(err, syscall.EINTR) && b.resumeOnInterrupt {
+				b.numInterruptsIgnored++
+				continue
+			}
+			return 0, nil, err
+		}
+		break
 	}
+
 	result := make([]byte, b.size)
 
 	gotMsgType := MessageType(*(*C.long)(b.buffer))
@@ -261,6 +282,12 @@ func (b *MsgBuffer) Close() error {
 	C.free(b.buffer)
 	b.closed = true
 	return nil
+}
+
+func (b *MsgBuffer) safeNumInterruptsIgnored() int {
+	b.lock.Lock()
+	defer b.lock.Unlock()
+	return b.numInterruptsIgnored
 }
 
 func firstNullByteIdx(buf []byte) int {
