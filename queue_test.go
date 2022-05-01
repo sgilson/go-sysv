@@ -67,7 +67,11 @@ func TestResumeOnInterrupt(t *testing.T) {
 	awaitMsgBufLocked(rcvResume)
 	require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 	require.NoError(t, snd.MsgSnd(testMsgType, []byte{}, SNoWaitFlag))
-	require.GreaterOrEqual(t, rcvResume.safeNumInterruptsIgnored(), 1)
+	awaitCondition(t, "number of interrupts is greater than 1",
+		1*time.Millisecond,
+		30*time.Millisecond, func() bool {
+			return rcvResume.safeNumInterruptsIgnored() >= 1
+		})
 
 	go func() {
 		_, _, err := rcvFail.MsgRcv(testMsgType)
@@ -171,4 +175,25 @@ func awaitMsgBufLocked(b *MsgBuffer) {
 	// Additional time to allow other goroutine to start
 	// system call such as msgsnd or msgrcv
 	time.Sleep(10 * time.Millisecond)
+}
+
+func awaitCondition(t *testing.T,
+	desc string,
+	interval time.Duration,
+	timeout time.Duration,
+	check func() bool) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	done := time.After(timeout)
+	for {
+		select {
+		case <-ticker.C:
+			if check() {
+				return
+			}
+		case <-done:
+			t.Errorf("expected condition to be true after %d: %s", timeout, desc)
+		}
+	}
 }
