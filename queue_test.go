@@ -73,7 +73,7 @@ func TestNoResumeOnInterrupt(t *testing.T) {
 		wg.Done()
 	}()
 	awaitMsgBufLocked(rcvFail)
-	require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR2))
+	require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
 	wg.Wait()
 }
 
