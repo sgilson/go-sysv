@@ -1,5 +1,7 @@
 # System V Wrapper
 
+![](https://github.com/sgilson/go-sysv/actions/workflows/ci.yml/badge.svg)
+
 A limited wrapper around [System V inter-process communication facilities][sysv].
 This package does not aim to expose the full System V feature set but
 rather expose a limited set of features in idiomatic and safe Go.
