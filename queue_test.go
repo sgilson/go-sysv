@@ -54,8 +54,6 @@ func TestResumeOnInterrupt(t *testing.T) {
 	queueID := newTestQueue(t)
 	rcvResume, err := NewMsgBuffer(queueID, 0, ResumeOnInterrupt)
 	require.NoError(t, err)
-	rcvFail, err := NewMsgBuffer(queueID, 0, NoResumeOnInterrupt)
-	require.NoError(t, err)
 	snd, err := NewMsgBuffer(queueID, 0)
 	require.NoError(t, err)
 
@@ -69,17 +67,26 @@ func TestResumeOnInterrupt(t *testing.T) {
 	require.NoError(t, snd.MsgSnd(testMsgType, []byte{}, SNoWaitFlag))
 	awaitCondition(t, "number of interrupts is greater than 1",
 		1*time.Millisecond,
-		30*time.Millisecond, func() bool {
-			return rcvResume.safeNumInterruptsIgnored() >= 1
+		30*time.Millisecond,
+		func() bool {
+			return rcvResume.numInterruptsIgnored >= 1
 		})
+}
 
+func TestNoResumeOnInterrupt(t *testing.T) {
+	rcvFail, err := NewMsgBuffer(newTestQueue(t), 0, NoResumeOnInterrupt)
+	require.NoError(t, err)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
 		_, _, err := rcvFail.MsgRcv(testMsgType)
 		require.ErrorIs(t, err, syscall.EINTR)
+		wg.Done()
 	}()
 	awaitMsgBufLocked(rcvFail)
-	require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR1))
-	require.Equal(t, rcvFail.safeNumInterruptsIgnored(), 0)
+	require.NoError(t, syscall.Kill(syscall.Getpid(), syscall.SIGUSR2))
+	wg.Wait()
 }
 
 func TestUseAfterFree(t *testing.T) {
@@ -108,7 +115,7 @@ func TestSendReceiveMany(t *testing.T) {
 	wg.Add(2)
 
 	go func() {
-		rcv, err := NewMsgBuffer(queueID, maxSize)
+		rcv, err := NewMsgBuffer(queueID, maxSize, ResumeOnInterrupt)
 		require.NoError(t, err)
 		defer rcv.Close()
 
@@ -127,7 +134,7 @@ func TestSendReceiveMany(t *testing.T) {
 	}()
 
 	go func() {
-		snd, err := NewMsgBuffer(queueID, maxSize)
+		snd, err := NewMsgBuffer(queueID, maxSize, ResumeOnInterrupt)
 		require.NoError(t, err)
 		defer snd.Close()
 
@@ -194,6 +201,7 @@ func awaitCondition(t *testing.T,
 			}
 		case <-done:
 			t.Errorf("expected condition to be true after %d: %s", timeout, desc)
+			break
 		}
 	}
 }
